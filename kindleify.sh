@@ -1,6 +1,13 @@
 #!/bin/sh
+PPWD=$(pwd)
+
 function show_help(){
     echo "Usage: $0 [-v] [-h] [-o output_dir] input_file ... "
+    echo "Options:"
+    echo "    -h     show help"
+    echo "    -v     verbose mode"
+    echo "    -j     set JPEG output (default is png)"
+    echo "    -o dir set output dir (default to same path of source file)"
 }
 
 function check_env(){
@@ -30,7 +37,7 @@ function make_workdir(){
 }
 
 function clean_name(){
-    echo $(basename $1) | sed -e's/\.rar$//' -e 's/\.zip$//'
+    echo $(basename $1) | sed -e 's/\.[^.]\{1,\}$//'
 }
 
 function get_magic(){
@@ -38,9 +45,9 @@ function get_magic(){
 }
 
 function unpack_files(){
-    if [ ! -f $1 ] ; then echo File not found: $1 ; return 1 ; fi
+    if [ ! -f "$1" ] ; then echo File not found: $1 ; exit 1 ; fi
     echo Unpacking file $1 to $2
-    mkdir -p $2
+    mkdir -p "$2"
     
     MAGIC=$(get_magic $1)
     case $MAGIC in
@@ -55,19 +62,24 @@ function unpack_files(){
     esac
     cd $2
     find . -name '*.png' -or -name '*.jpg' -or -name '*.jpeg' -or -name '*.gif' | sed -e 's/^.\///' > $3
-    echo Total $(wc -l $3) file\(s\)
+    cd $PPWD
+    echo Total $(wc -l $3 | awk '{print $1}') file\(s\)
 }
 
 function pack_files(){
-    echo $1
+    echo Packing to $1
     cd $2
-    zip -@ $1 < $3  > $VERBOSE
+    find . | sed -e 's/^.\///' | zip -9 -@ $1  > $VERBOSE
+    cd $PPWD
 }
 
 function do_convert(){
-    echo Converting $3
-    mkdir -p `dirname $2/$3`
-    convert $1/$3 -resize 600x800 -colorspace gray $2/$3
+    P=$(dirname "$2/$3")
+    mkdir -p "$P"
+    SFN=$3
+    DFN=$3.$OFMT
+    echo "Converting $SFN => $DFN"
+    convert "$1/$SFN" -resize 600x800 -colorspace gray "$2/$DFN"
 }
 
 function clean_up(){
@@ -77,6 +89,7 @@ function clean_up(){
 
 check_env
 VERBOSE=/dev/null
+OFMT=png
 
 if [ "x$1" = x ]; then show_help; exit 1; fi
 
@@ -89,13 +102,16 @@ do
         -v)
             VERBOSE=/dev/stdout
             ;;
+        -j)
+            OFMT=jpg
+            ;;
         -o)
             shift
-            OUT=$1
-            if [ ! -d $OUT ]; then
-                echo Could not open dir: $OUT;
+            if [ ! -d $1 ]; then
+                echo Could not open dir: $1;
                 exit 1;
             fi
+            OUT=$(cd $1; pwd)
             ;;
         *)
             echo "Syntax Error: $1"
@@ -110,9 +126,9 @@ while [ "x$1" != x ]
 do
     SRC=$(fullpath $1)
     if [ "x$OUT" = "x" ]; then 
-        DST=$(dirname $SRC); 
+        OUT=$(dirname $SRC); 
     fi
-    DST=$DST/$(clean_name $1).kindle.zip
+    DST=$OUT/$(clean_name $1).kindle.zip
 
     WDIR=$(make_workdir)
     ODIR=$WDIR/o
@@ -122,7 +138,7 @@ do
     unpack_files $SRC $ODIR $FLST
 
     cat $FLST | while read; do
-        do_convert $ODIR $DDIR $REPLY;
+        do_convert $ODIR $DDIR "$REPLY";
     done
 
     pack_files $DST $DDIR $FLST
