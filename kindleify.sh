@@ -9,6 +9,12 @@ function check_env(){
         echo ImageMagick is not installed.
         exit 1
     fi
+
+    which xxd > /dev/null
+    if [ $? != 0 ]; then
+        echo xxd is not available.
+        exit 1
+    fi
 }
 
 function fullpath(){
@@ -23,11 +29,30 @@ function make_workdir(){
     fi
 }
 
+function clean_name(){
+    echo $(basename $1) | sed -e's/\.rar$//' -e 's/\.zip$//'
+}
+
+function get_magic(){
+    xxd -l4 -ps $1
+}
+
 function unpack_files(){
     if [ ! -f $1 ] ; then echo File not found: $1 ; return 1 ; fi
     echo Unpacking file $1 to $2
     mkdir -p $2
-    unzip -d $2 $1 > $VERBOSE
+    
+    MAGIC=$(get_magic $1)
+    case $MAGIC in
+        504b0304)
+            #PK..
+            unzip -d $2 $1 > $VERBOSE
+            ;;
+        52617221)
+            #Rar!
+            unrar x $1 $2 > $VERBOSE
+            ;;
+    esac
     cd $2
     find . -name '*.png' -or -name '*.jpg' -or -name '*.jpeg' -or -name '*.gif' | sed -e 's/^.\///' > $3
     echo Total $(wc -l $3) file\(s\)
@@ -87,7 +112,7 @@ do
     if [ "x$OUT" = "x" ]; then 
         DST=$(dirname $SRC); 
     fi
-    DST=$DST/$(basename -s .zip $1).kindle.zip
+    DST=$DST/$(clean_name $1).kindle.zip
 
     WDIR=$(make_workdir)
     ODIR=$WDIR/o
